@@ -2,6 +2,9 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_3.h>
+#include "Libs/ImGui/imgui_src/imgui.h"
+#include "Libs/ImGui/imgui_impl_dx11.h"
+#include "Libs/ImGui/imgui_impl_win32.h"
 
 inline void Log(const std::string& content)
 {
@@ -41,13 +44,20 @@ void ReloadBackBufferD3D11()
 
 void ResizeBackBufferD3D11(unsigned width, unsigned height)
 {
-    backbufferRTV->Release();
+    if(backbufferRTV != nullptr)
+        backbufferRTV->Release();
+    
     dxgiSwapChain->ResizeBuffers(2, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
     ReloadBackBufferD3D11();
 }
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
+    if(ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam))
+        return true;
+    
     switch(msg)
     {
     case WM_SIZE:
@@ -162,7 +172,18 @@ int main()
         throw std::exception("Failed SwapChain creation");
     }
 
-    ReloadBackBufferD3D11();
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplWin32_Init(hwnd);
+    ImGui_ImplDX11_Init(device, deviceContext);
+
+    ResizeBackBufferD3D11(width, height);
 
     isRunning = true;
 
@@ -182,12 +203,30 @@ int main()
         vp.MaxDepth = 1.0f;
         deviceContext->RSSetViewports(1, &vp);
 
-        FLOAT clearColor[] = { 1.0f, 1.0f, 0.0f, 1.0f };
+        FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
         deviceContext->ClearRenderTargetView(backbufferRTV, clearColor);
 
         deviceContext->OMSetRenderTargets(1, &backbufferRTV, nullptr);
+
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        { 
+            ImGui::Begin("FrameRate");                  
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::End();
+        }
+
+        ImGui::Render();
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        
         dxgiSwapChain->Present(true, NULL);
     }
+
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
     
     DestroyWindow(hwnd);
 
